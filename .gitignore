@@ -1,0 +1,9 @@
+*~
+*.sw*
+*.twi
+twi
+run
+tests/*
+*.txt
+*.b
+

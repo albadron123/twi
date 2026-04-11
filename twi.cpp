@@ -1,14 +1,10 @@
 /*
 TODO LIST:
 - start parsing while the scanner worked correctly
-- show runtime error if something went wrong
-- decompose into several files 
-	(scanner.cpp & later add parser.cpp & interpreter.cpp)
-
-- add statements (print and declare)
-- add environments of variables
-- add = support in expression evaluation
-- add scoping support for statement evaluation
+- show runtime error and crash if something went wrong
+- add else clause
+- add function calls 
+- native functions
  */
 
 #include<stdio.h>
@@ -17,387 +13,15 @@ TODO LIST:
 #include<map>
 #include<string>
 
-inline bool is_alpha(char c) {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
-}
+#include"utils.h"
+#include"scanner.h"
+#include"parser.h"
+#include"compiler.h"
 
-inline bool is_digit(char c) {
-	return (c >= '0' && c <= '9');
-}
-
-enum TokenType {
-	//One character tokens
-	LEFT_PAREN,
-	RIGHT_PAREN,
-	LEFT_BRACE,
-	RIGHT_BRACE,
-	COMMA,
-	DOT,
-	MINUS,
-	PLUS,
-	SEMICOLON,
-	SLASH,
-	STAR,
-	//One or Two character tokens
-	BANG,
-	BANG_EQUAL,
-	EQUAL,
-	EQUAL_EQUAL,
-	GREATER,
-	GREATER_EQUAL,
-	LESS,
-	LESS_EQUAL,
-	//Literals
-	IDENTIFIER,
-	STRING,
-	NUMBER,
-	//Keywords
-	AND,
-	CLASS,
-	ELSE,
-	FALSE,
-	FUN,
-	FOR,
-	IF,
-	NIL,
-	OR,
-	PRINT,
-	RETURN,
-	THIS,
-	TRUE,
-	VAR,
-   	WHILE,
-	//EOF
-	_EOF
-};
-
-const char* tokenNames[] = {
-	"(", 
-	")", 
-	"{", 
-	"}", 
-	",", 
-	".",
-	"-",
-	"+",
-	";",
-	"/",
-	"*",
-	"!",
-	"!=",
-	"=",
-	"==",
-	">",
-	">=",
-	"<",
-	"<=",
-	"identifier",
-	"string",
-	"number",
-	//keywords
-	"and", "class", "else", "false", "fun", "for", "if", "nil", "or", "print", "return",
-	"this", "true", "var", "while",
-};
-
-
-std::map<TokenType, float> opPower = {
-	{PLUS, 30},
-   	{MINUS, 30},
-	{STAR, 40},
-	{SLASH, 40},
-	{GREATER, 20},
-	{GREATER_EQUAL, 20},
-	{LESS, 20},
-	{LESS_EQUAL, 20},
-	{BANG_EQUAL, 10},
-	{EQUAL_EQUAL, 10},
-};
-
-std::map<std::string, TokenType> keywords = {
-	{"and", AND},
-	{"class", CLASS},
-	{"else", ELSE},
-	{"false", FALSE},
-	{"fun", FUN},
-	{"for", FOR},
-	{"if", IF},
-	{"nil", NIL},
-	{"or", OR},
-	{"print", PRINT},
-	{"return", RETURN},
-	{"this", THIS},
-	{"true", TRUE},
-	{"var", VAR},
-	{"while", WHILE},
-};
-
-
-struct Token {
-	TokenType type;
-	std::string content;
-	//this is used only when we deal with numbers
-	double value;
-	int line;
-};
-
-enum ExprType {
-	UNARY,
-	BINARY,
-	GROUPING,
-	LITERAL,
-	ERROR,
-	EMPTY
-};
-
-enum StmtType {
-	EXPR_STMT,
-	PRINT_STMT,
-	VAR_STMT,
-	GROUP_STMT,
-};
-
-struct Expr {
-	ExprType type;
-	Token* token;
-	Expr* children[2];
-};
-
-struct Stmt {
-	//General information
-	StmtType type;
-
-	Expr* expr[1];
-
-	//Var stmt info
-	Expr* lvalue;
-	//Group stmt info
-	std::vector<Stmt> group;
-};
-
-
-int currentToken = 0;
-bool doPanic = false;
-Expr* exprs = nullptr;
-int exprsCount = 0;
-
-
-enum ValueType {
-	STRING_VAL,
-	NUMBER_VAL,
-	BOOL_VAL,
-	NIL_VAL,
-	NOT_A_VALUE,
-	NO_VALUE
-};
-struct EvalResult {
-	ValueType type;
-	double value;
-	std::string str_value;
-};
-
-struct Environment {
-	std::map<std::string, ValueType> vars;
-}
-//we will store envs in a vector for now
-std::vector<Environment>;
-
-std::vector<Token> tokens;
-
-std::string print_expr(Expr* expr) {
-	std::string res = "";
-	switch(expr->type) {
-		case LITERAL:
-			res = expr->token->content;
-			break;
-		case BINARY:
-			res = "(" + std::string(tokenNames[expr->token->type]) + " " + 
-				  print_expr(expr->children[0]) + " " + 
-				  print_expr(expr->children[1]) + ")";
-			break;
-		case UNARY:
-			res = "(" + std::string(tokenNames[expr->token->type]) + " " +
-			   	 print_expr(expr->children[0]) + ")";	
-			break;
-		case GROUPING:
-			res = "(group" + print_expr(expr->children[0]) + ")";
-			break;
-		case ERROR:
-			res = "error token";
-		case EMPTY:
-			res = "empty";
-	}
-	return res;
-}
-
-bool scan(const char * src, std::vector<Token>& out) {
-	bool hasErrors = false;
-	const char* p = src;
-	int line = 0;
-	while(*p != '\0') {
-		switch(*p) {	
-			case ' ':
-			case '\t':
-			case '\r':
-				break;
-			case '\n':
-				++line;
-				break;
-			// one char tokens
-			case '(':
-				out.push_back({LEFT_PAREN, "", 0, line});
-				break;	
-			case ')':
-				out.push_back({RIGHT_PAREN, "", 0, line});
-				break;
-			case '{':
-				out.push_back({LEFT_BRACE, "", 0, line});
-				break;
-			case '}':
-				out.push_back({RIGHT_BRACE, "", 0, line});
-				break;
-			case '.':
-				out.push_back({DOT, "", 0, line});
-				break;
-			case ',':
-				out.push_back({COMMA, "", 0, line});
-				break;
-			case ';':
-				out.push_back({SEMICOLON, "", 0, line});
-				break;
-			case '+':
-				out.push_back({PLUS, "", 0, line});
-				break;
-			case '-':
-				out.push_back({MINUS, "", 0, line});
-				break;
-			case '*':
-				out.push_back({STAR, "", 0, line});
-				break;
-			case '/':
-				//one line comment case
-				if(*(p+1) == '/') {
-					p+=2;
-					while(*p != '\0' && *p != '\n')
-						++p;
-					--p;
-				}
-				//multiple lines comment case
-				else if (*(p+1) == '*') {
-					p+=2;
-					while(!((*p == '\0') || 
-						    (*(p+1) == '\0') || 
-							(*p == '*' && *(p+1) == '/'))) {
-						++p;
-					}
-					if(*p == '\0') --p;
-					if(*p == '*') ++p;
-				}
-				else { 
-				//slash case
-				out.push_back({SLASH, "", 0, line});
-				}
-				break;
-			//one or two char tokens
-			case '!':
-				if(*(p+1) == '=') {
-					++p;
-					out.push_back({BANG_EQUAL, "", 0, line});
-				}
-				else {
-					out.push_back({BANG, "", 0, line});
-				}
-				break;
-			case '=':
-				if(*(p+1) == '=') {
-					++p;
-					out.push_back({EQUAL_EQUAL, "", 0, line});
-				}
-				else {
-					out.push_back({EQUAL, "", 0, line});
-				}
-				break;	
-			case '>':	
-				if(*(p+1) == '=') {
-					++p;
-					out.push_back({GREATER_EQUAL, "", 0, line});
-				}
-				else {
-					out.push_back({GREATER, "", 0, line});
-				}
-				break;
-			case '<':
-				if(*(p+1) == '=') {
-					++p;
-					out.push_back({LESS_EQUAL, "", 0, line});
-				}
-				else {
-					out.push_back({LESS, "", 0, line});
-				}
-				break;
-			//Literals
-			case '"':
-				{
-					const char* start = p;
-					do {
-						++p;
-					} while (!(*p == '"' || *p == '\0' || *p == '\n'));
-					if(*p == '\0' || *p == '\n')
-					{
-						printf("LINE %d: String does not terminate\n", 
-							   line);
-						hasErrors = true;
-					}	
-					else
-					{
-						out.push_back({STRING, "", 0, line});
-						int last_id = out.size()-1;
-						out[last_id].content.assign(start+1, p-start-1);
-					}
-
-					if(*p == '\0') --p;
-				}
-				break;
-			default:
-				if(is_alpha(*p) || *p == '_') {
-					const char* start = p;
-					do {
-						++p;
-					} while(is_alpha(*p) || *p == '_' || is_digit(*p));
-					out.push_back({IDENTIFIER, "", 0, line});
-					int last_id = out.size()-1;
-					out[last_id].content.assign(start, p-start);
-					if(keywords.find(out[last_id].content) != keywords.end()) {
-						out[last_id].type = keywords[out[last_id].content];
-					}
-					--p;
-				}
-				else if(is_digit(*p)) {
-					const char * start = p;
-					do {
-						++p;
-					} while(is_digit(*p));
-					if (*(p) == '.' && is_digit(*(p+1))) {
-						++p;	
-						do {
-							++p;
-						} while(is_digit(*p));
-					}		
-					out.push_back({NUMBER, "", 0, line});
-						int last_id = out.size()-1;
-						out[last_id].content.assign(start, p-start);
-						out[last_id].value = std::stod(out[last_id].content);
-					--p;
-
-				}
-				else {
-					printf("LINE %d: Unexpected character %c\n",line, *p);
-					hasErrors = true;
-				}
-		}
-		++p;	
-	}
-	return hasErrors;
-}
+//Temporal decls
+void print_evaluation(EvalResult er);
+EvalResult eval_expression(Expr* expr); 
+bool eval_statement(Stmt* stmt);
 
 
 std::string double_to_string(double value) {
@@ -406,22 +30,202 @@ std::string double_to_string(double value) {
     return std::string(buf);
 }
 
+EvalResult user_function_call(int functionParamsIndex, 
+							  std::vector<EvalResult> results,
+							  Stmt* body)
+{
+	envs.push_back({{},{}});
+	if(functionParamsIndex != -1)
+	{
+		//add arguments as variables to the current env
+		for(int i = 0; i < functionParams[functionParamsIndex].size(); ++i)
+		{
+			envs[envs.size()-1]
+				.vars[functionParams[functionParamsIndex][i]->content] = results[i];
+		}
+	}
+	eval_statement(body);
+	envs.pop_back();
+	if(isReturning == true)
+	{	
+		isReturning = false;
+		return returnResult;
+	}
+	return {"", NIL_VAL, 0, ""};
+}
+
+//returns false if fails
+bool eval_statement(Stmt* stmt) {
+	switch(stmt->type) {
+		case IF_STMT:
+		{
+			EvalResult conditionEval = eval_expression(stmt->exprs[0]);
+			if(conditionEval.type == NUMBER_VAL || conditionEval.type == BOOL_VAL)
+			{
+				bool doExecuteBody = (bool)conditionEval.value;
+				if(doExecuteBody) {
+					eval_statement(stmt->stmts[0]);
+				}
+				else if (stmt->stmts[1] != 0) {
+					eval_statement(stmt->stmts[1]);
+				}
+				return true;
+			}
+			else {
+				printf("EXECUTION : can't evaluate condition as boolean\n");
+				return false;
+			}
+		}
+		case WHILE_STMT:
+		{
+			
+			EvalResult conditionEval = eval_expression(stmt->exprs[0]);
+			if(conditionEval.type == NUMBER_VAL || conditionEval.type == BOOL_VAL)
+			{
+				bool doExecuteBody = (bool)conditionEval.value;
+				while(doExecuteBody) {
+					eval_statement(stmt->stmts[0]);
+					conditionEval = eval_expression(stmt->exprs[0]);
+					doExecuteBody = (bool)conditionEval.value;
+				}
+				return true;
+			}
+			else {
+				printf("EXECUTION : can't evaluate condition as boolean\n");
+				return false;
+			}
+
+		}
+		case RETURN_STMT:
+		{
+			if (stmt->exprs[0]->type == EMPTY)
+			{
+				returnResult = {"", NIL_VAL, 0, ""};
+				isReturning = true;
+				return true;
+			}
+			EvalResult res = eval_expression(stmt->exprs[0]);
+			returnResult = res;
+			isReturning = true;
+			return true;
+		}
+		case GROUP_STMT:
+		{
+			envs.push_back({{}, {}});
+			for(int i = 0; i < stmt->group.size(); ++i) {	
+				bool doSucceed = eval_statement(stmt->group[i]);
+				if(!doSucceed) {
+					envs.pop_back();
+					return false;
+				}
+				if(isReturning) {
+					envs.pop_back();
+					return true;
+				}
+			}
+			envs.pop_back();
+			return true;
+		}
+		case PRINT_STMT:
+		{
+			EvalResult res = eval_expression(stmt->exprs[0]);
+			print_evaluation(res);
+			return true;
+		}
+		case EXPR_STMT:
+		{
+			eval_expression(stmt->exprs[0]);
+			return true;
+		}
+		case VAR_STMT:
+		{
+			EvalResult res = eval_expression(stmt->exprs[0]);
+			res.name = stmt->lvalue->content;
+			envs[envs.size()-1].vars[stmt->lvalue->content] = res;
+			return true;
+		}
+		case FUNCTION_STMT:
+		{
+			std::string functionDescription = 
+				"(func " + 
+				stmt->lvalue->content +
+				" decl :: ";
+			if(stmt->extraIndex >= 0) {
+				for(int i = 0; i < functionParams[stmt->extraIndex].size()-1; ++i) {
+					functionDescription += 
+						functionParams[stmt->extraIndex][i]->content + ", ";
+				}
+				int lastIndex = functionParams[stmt->extraIndex].size()-1;
+				functionDescription += 
+						functionParams[stmt->extraIndex][lastIndex]->content + ")";	
+			}
+			else {
+				functionDescription += "no args)";
+			}
+			printf("%s\n", functionDescription.c_str());	
+			envs[envs.size()-1].funcs[stmt->lvalue->content] = {
+				stmt->stmts[0], 
+				(stmt->extraIndex == -1)?
+					0: 
+					(int)functionParams[stmt->extraIndex].size(),
+				stmt->extraIndex
+			};
+			return true;
+		}
+		default:
+			return true;
+	}
+
+}
+
+
+inline EvalResult EvalResult_True() {
+	return {"", BOOL_VAL, 1, ""};
+}
+
+inline EvalResult EvalResult_False() {
+	return {"", BOOL_VAL, 0, ""};
+}
+
 //eval only arithmetics
 EvalResult eval_expression(Expr* expr) {
+
 	if(expr->token != 0 && expr->token->type == NUMBER) {
-		return {NUMBER_VAL, expr->token->value, ""};
+		return {"", NUMBER_VAL, expr->token->value, ""};
 	}
 	else if (expr->token != 0 && expr->token->type == STRING) {
-		return {STRING_VAL, 0, expr->token->content};
+		return {"", STRING_VAL, 0, expr->token->content};
 	}
 	else if (expr->token != 0 && expr->token->type == TRUE) {
-		return {BOOL_VAL, 1, ""};
+		return EvalResult_True();
 	}
 	else if (expr->token != 0 && expr->token->type == FALSE) {
-		return {BOOL_VAL, 0, ""};
+		return EvalResult_False();
 	}
 	else if (expr->token != 0 && expr->token->type == NIL) {
-		return {NIL_VAL, 0, ""};
+		return {"", NIL_VAL, 0, ""};
+	}
+	else if (expr->token != 0 && expr->token->type == IDENTIFIER) {
+		int envId = envs.size()-1;
+		// search for variable name
+		while(envId >= 0)
+		{
+			
+			if(envs[envId].vars.find(expr->token->content) != 
+			   envs[envId].vars.end()) {
+				return envs[envId].vars[expr->token->content];
+			}
+			if(envs[envId].funcs.find(expr->token->content) != 
+			   envs[envId].funcs.end()) {
+				return {"", CALEE_VAL, (double)envId, expr->token->content};
+			}
+			--envId;
+		}
+		if(nativeFunctions.find(expr->token->content) != nativeFunctions.end()) {
+			return {"", CALEE_VAL, -1, expr->token->content};	
+		}
+		printf("found unassigned identifier: %s\n", expr->token->content.c_str());
+		return {"", NOT_A_VALUE, 0, ""};
 	}
 	else if (expr->type == GROUPING) {
 		return eval_expression(expr->children[0]);
@@ -438,7 +242,7 @@ EvalResult eval_expression(Expr* expr) {
 				res.value = !res.value;
 			}
 			else {
-				res = {NOT_A_VALUE, 0, ""};
+				res = {"", NOT_A_VALUE, 0, ""};
 			}
 			return res;
 		}
@@ -452,9 +256,113 @@ EvalResult eval_expression(Expr* expr) {
 				res.value = -res.value;
 			}
 			else {
-				res = {NOT_A_VALUE, 0, ""};
+				res = {"", NOT_A_VALUE, 0, ""};
 			}
 			return res;
+		}
+	}
+	else if(expr->type == CALL) {
+		EvalResult childRes = eval_expression(expr->children[0]);
+		if(childRes.type == CALEE_VAL) {
+			//this means that we've passed an environment of the 'thing'
+			//in the value
+			if(childRes.value != -1) {
+				if(childRes.value < envs.size() && 
+				   envs[(int)childRes.value].funcs.find(childRes.str_value) !=
+				   envs[(int)childRes.value].funcs.end()) {
+					int arity = envs[(int)childRes.value]
+									.funcs[childRes.str_value]
+									.arity;
+					int provided;
+					if(expr->extraIndex != -1) {	
+						provided = functionArgs[expr->extraIndex].size();
+					}
+					else {
+						provided = 0;
+					}
+					//check for arity
+					if(arity != provided) {
+						printf("you provided %d arguments to %s,but %d was expected\n",
+								provided, 
+								childRes.str_value.c_str(),
+								arity);
+						return {"", NOT_A_VALUE, 0, ""};
+					}
+					//evaluate all the arguments
+					if(arity > 0) {
+						std::vector<EvalResult> evalArgs = {};
+						for(int i = 0; i < provided; ++i) {
+							evalArgs.push_back(
+								eval_expression(functionArgs[expr->extraIndex][i]));
+						}
+						
+						EvalResult functionReturn = user_function_call(
+								envs[(int)childRes.value]
+									.funcs[childRes.str_value]
+									.paramsId,
+								evalArgs,
+								envs[(int)childRes.value]
+									.funcs[childRes.str_value]
+									.body);
+						return functionReturn;
+					}	
+					EvalResult functionReturn = user_function_call(
+								-1,
+								{},
+								envs[(int)childRes.value]
+									.funcs[childRes.str_value]
+									.body);
+					return functionReturn;
+				}
+				else {
+					printf("function not found!!! error\n");
+					return {"", NOT_A_VALUE, 0, ""};
+				}
+
+			}
+			else if(nativeFunctions.find(childRes.str_value) !=
+			   nativeFunctions.end()) {
+				int arity = nativeFunctions[childRes.str_value].arity;
+				int provided;
+				if(expr->extraIndex != -1) {	
+					provided = functionArgs[expr->extraIndex].size();
+				}
+				else {
+					provided = 0;
+				}
+				//check for arity
+				if(arity != provided) {
+					printf("you provided %d arguments to %s,but %d was expected\n",
+							provided, 
+							childRes.str_value.c_str(),
+							arity);
+					return {"", NOT_A_VALUE, 0, ""};
+				}
+				//evaluate all the arguments
+				if(arity > 0) {
+					std::vector<EvalResult> evalArgs = {};
+					for(int i = 0; i < provided; ++i) {
+						evalArgs.push_back(
+							eval_expression(functionArgs[expr->extraIndex][i]));
+					}
+					
+					EvalResult functionReturn = 
+						nativeFunctions[childRes.str_value].func(evalArgs);
+					return functionReturn;
+				}
+				else 
+				{
+					return nativeFunctions[childRes.str_value].func({});
+				}
+			}
+			else {
+				printf("function not found!!! error\n");
+				return {"", NOT_A_VALUE, 0, ""};
+			}
+		}
+		else {
+			printf("you try to call something that cant be called\n");
+			return {"", NOT_A_VALUE, 0, ""};	
 		}
 	}
 	else if(expr->type == BINARY) {
@@ -464,118 +372,199 @@ EvalResult eval_expression(Expr* expr) {
 			case PLUS:
 				if((a.type == NUMBER_VAL || a.type == BOOL_VAL) && 
 				   (b.type == NUMBER_VAL || b.type == BOOL_VAL)) {
-					return {NUMBER_VAL, a.value+b.value, ""};
+					return {"", NUMBER_VAL, a.value+b.value, ""};
 				}
 				else if (a.type == STRING_VAL && b.type == STRING_VAL) {
-					return {STRING_VAL, 0, a.str_value + b.str_value};
+					return {"", STRING_VAL, 0, a.str_value + b.str_value};
 				}	
 				else if (a.type == STRING_VAL && b.type == NUMBER_VAL) {
-					return {STRING_VAL, 0, a.str_value + double_to_string(b.value)};
+					return {"", STRING_VAL, 0, a.str_value + double_to_string(b.value)};
 				}
 				else if (b.type == STRING_VAL && a.type == NUMBER_VAL) {
-					return {STRING_VAL, 0, double_to_string(a.value) + b.str_value};
+					return {"", STRING_VAL, 0, double_to_string(a.value) + b.str_value};
 				}
 				else {
-					return {NOT_A_VALUE, 0, ""};
+					return {"", NOT_A_VALUE, 0, ""};
 				}
 			case MINUS:
 				if((a.type == NUMBER_VAL || a.type == BOOL_VAL) && 
 				   (b.type == NUMBER_VAL || b.type == BOOL_VAL))
 				{
-					return {NUMBER_VAL, a.value-b.value, ""};
+					return {"", NUMBER_VAL, a.value-b.value, ""};
 				}
 				else
 				{
-					return {NOT_A_VALUE, 0, ""};
+					return {"", NOT_A_VALUE, 0, ""};
 				}	
 			case STAR:
 				if((a.type == NUMBER_VAL || a.type == BOOL_VAL) && 
 				   (b.type == NUMBER_VAL || b.type == BOOL_VAL))
 				{
-					return {NUMBER_VAL, a.value*b.value, ""};
+					return {"", NUMBER_VAL, a.value*b.value, ""};
 				}
 				else
 				{
-					return {NOT_A_VALUE, 0, ""};
+					return {"", NOT_A_VALUE, 0, ""};
 				}	
 			case SLASH:
 				if((a.type == NUMBER_VAL || a.type == BOOL_VAL) && 
 				   (b.type == NUMBER_VAL || b.type == BOOL_VAL)) {
-					return {NUMBER_VAL, a.value/b.value, ""};
+					return {"", NUMBER_VAL, a.value/b.value, ""};
 				}
 				else {
-					return {NOT_A_VALUE, 0, ""};
+					return {"", NOT_A_VALUE, 0, ""};
 				}
 			case GREATER:
 				if(a.type == NUMBER_VAL && b.type == NUMBER_VAL) {
-					return {BOOL_VAL, (double)(int)(a.value>b.value), ""};
+					return {"", BOOL_VAL, (double)(int)(a.value>b.value), ""};
 				}
 				else {
-					return {NOT_A_VALUE, 0, ""};
+					return {"", NOT_A_VALUE, 0, ""};
 				}
 			case GREATER_EQUAL:
 				if(a.type == NUMBER_VAL && b.type == NUMBER_VAL) {
-					return {BOOL_VAL, (double)(int)(a.value>=b.value), ""};
+					return {"", BOOL_VAL, (double)(int)(a.value>=b.value), ""};
 				}
 				else {
-					return {NOT_A_VALUE, 0, ""};
+					return {"", NOT_A_VALUE, 0, ""};
 				}
 			case LESS:
 				if(a.type == NUMBER_VAL && b.type == NUMBER_VAL) {
-					return {BOOL_VAL, (double)(int)(a.value<b.value), ""};
+					return {"", BOOL_VAL, (double)(int)(a.value<b.value), ""};
 				}
 				else {
-					return {NOT_A_VALUE, 0, ""};
+					return {"", NOT_A_VALUE, 0, ""};
 				}
 			case LESS_EQUAL:
 				if(a.type == NUMBER_VAL && b.type == NUMBER_VAL) {
-					return {BOOL_VAL, (double)(int)(a.value<=b.value), ""};
+					return {"", BOOL_VAL, (double)(int)(a.value<=b.value), ""};
 				}
 				else {
-					return {NOT_A_VALUE, 0, ""};
+					return {"", NOT_A_VALUE, 0, ""};
 				}
 			case EQUAL_EQUAL:
 				if(a.type == NUMBER_VAL && b.type == NUMBER_VAL) {
-					return {BOOL_VAL, (double)(int)(a.value==b.value), ""};
+					return {"", BOOL_VAL, (double)(int)(a.value==b.value), ""};
 				}
 				else if (a.type == STRING_VAL && b.type == STRING_VAL) {
-					return {BOOL_VAL, (double)(int)(a.str_value==b.str_value), ""};
+					return {"", BOOL_VAL, (double)(int)(a.str_value==b.str_value), ""};
 				}
 				else if (a.type == BOOL_VAL && b.type == BOOL_VAL) {
-					return {BOOL_VAL, (double)(int)(a.value==b.value), ""};
+					return {"", BOOL_VAL, (double)(int)(a.value==b.value), ""};
 				}
 				else {
-					return {BOOL_VAL, 0, ""};
+					return EvalResult_False();
 				}
 			case BANG_EQUAL:
 				if(a.type == NUMBER_VAL && b.type == NUMBER_VAL) {
-					return {BOOL_VAL, (double)(int)(a.value!=b.value), ""};
+					return {"", BOOL_VAL, (double)(int)(a.value!=b.value), ""};
 				}
 				else if (a.type == STRING_VAL && b.type == STRING_VAL) {
-					return {BOOL_VAL, (double)(int)(a.str_value!=b.str_value), ""};
+					return {"", BOOL_VAL, (double)(int)(a.str_value!=b.str_value), ""};
 				}
 				else if (a.type == BOOL_VAL && b.type == BOOL_VAL) {
-					return {BOOL_VAL, (double)(int)(a.value!=b.value), ""};
+					return {"", BOOL_VAL, (double)(int)(a.value!=b.value), ""};
 				}
 				else if (a.type == NIL_VAL || b.type == NIL_VAL) {
-					return {BOOL_VAL, 0, ""};
+					return EvalResult_False();
 				}
 				else {
-					return {BOOL_VAL, 1, ""};
+					return EvalResult_True();
 				}
+			/*
+			 * and / or are short circuit
+			 * first we try to evaluate for the lhs 
+			 * if it is convertable to bool we then eval it
+			 * based on that we decide if we need to convert to bool or 
+			 * evaluate the rhs.
+			 */
+			case AND:
+				if(a.type == NUMBER_VAL || a.type == BOOL_VAL)
+				{
+					if((bool)a.value == false) {
+						return EvalResult_False();
+					}
+					if(b.type == NUMBER_VAL || b.type == BOOL_VAL) {
+						if((bool)b.value == false) {
+							return EvalResult_False();
+						}
+						else {
+							return EvalResult_True();	
+						}
+					}
+					else {
+						printf("EXECUTION: can't convert rhs of 'and' to bool\n");
+						return {"", NOT_A_VALUE, 0, ""};
+					}
+				}
+				else 
+				{
+					printf("EXECUTION: can't convert lhs of 'and' to bool\n");
+					return {"", NOT_A_VALUE, 0, ""}; 
+				}
+			case OR:
+				if(a.type == NUMBER_VAL || a.type == BOOL_VAL)
+				{
+					if((bool)a.value == true) {
+						return EvalResult_True();
+					}
+					if(b.type == NUMBER_VAL || b.type == BOOL_VAL) {
+						if((bool)b.value == true) {
+							return EvalResult_True();
+						}
+						else {
+							return EvalResult_False();	
+						}
+					}
+					else {
+						printf("EXECUTION: can't convert rhs of 'or' to bool\n");
+						return {"", NOT_A_VALUE, 0, ""};
+					}
+				}
+				else 
+				{
+					printf("EXECUTION: can't convert lhs of 'or' to bool\n");
+					return {"", NOT_A_VALUE, 0, ""}; 
+				}
+			case EQUAL:
+			{
+				if(a.name == "") {
+					printf("can't assign to rvalue\n");
+					return {"", NOT_A_VALUE, 0, ""};
+				}
+				// we will assign the right side with the left side name to the left
+				// var
+				b.name = a.name;
+				int envId = envs.size()-1;
+				while(envId >= 0) {
+					
+					if(envs[envId].vars.find(a.name) != 
+					   envs[envId].vars.end()) {
+						envs[envId].vars[a.name] = b;
+						return b;
+					}
+					--envId;
+				}
+				//Unreachable
+				printf("unreachable area: should be the bug in logic of compiler\n");
+				return {"", NOT_A_VALUE, 0, ""};
+			}
 			default: 
 				printf("some binary operation is not supported\n");
-				return {NOT_A_VALUE, 0, ""};
+				return {"", NOT_A_VALUE, 0, ""};
 		}
 	}	
 	else if (expr->type == EMPTY) {
-		return {NO_VALUE, 0, ""}; 
+		return {"", NO_VALUE, 0, ""}; 
 	}
 	else 
 	{
 		// should be unreachable
-		return  {NOT_A_VALUE, 0, ""};	
+		return  {"", NOT_A_VALUE, 0, ""};	
 	}
+
+	printf("Shouldnt reach here\n");
+	return {"", NOT_A_VALUE, 0, ""};
 }
 
 
@@ -610,196 +599,15 @@ void print_evaluation(EvalResult er)
 	}	
 }
 
-void synchronize_expression_parser()
-{
-	while(currentToken != tokens.size() && 
-		  tokens[currentToken].type != SEMICOLON) {
-		++currentToken;
-	}
-}
-
-// #define VERBOSE
-Expr* parse_expression(float power)
-{
-	Expr* lhs;
-	//parse current token 
-	if(currentToken == tokens.size() || 
-	   tokens[currentToken].type == SEMICOLON) {
-		exprs[exprsCount] = {EMPTY, 0, {0,0}};
-		lhs = exprs+exprsCount;
-		++exprsCount;
-		return lhs;
-	}
-	else if(tokens[currentToken].type == IDENTIFIER || 
-	   		tokens[currentToken].type == NUMBER ||
-	   		tokens[currentToken].type == STRING ||
-			tokens[currentToken].type == TRUE ||
-			tokens[currentToken].type == FALSE ||
-			tokens[currentToken].type == NIL) {
-		exprs[exprsCount] = {LITERAL, &tokens[currentToken], {0,0}};
-		lhs = exprs+exprsCount;
-		++exprsCount;
-#ifdef VERBOSE
-		std::string res = print_expr(lhs);
-		printf("IN %d EXPRESSION: %s\n", currentToken, res.c_str());	
-#endif
-	}
-	else if (tokens[currentToken].type == MINUS ||
-			 tokens[currentToken].type == BANG) {
-		//add a unary operator here
-		exprs[exprsCount] = {UNARY, &tokens[currentToken], {0,0}};
-		lhs = exprs + exprsCount;
-		++exprsCount;
-		++currentToken;
-		Expr* insideOfUnary = parse_expression(1000);
-		if(doPanic) 
-			return insideOfUnary;
-		if(insideOfUnary->type == EMPTY) 
-		{
-			printf("PARSE: expected a token after unary [%s] but string terminated\n",
-					tokenNames[lhs->token->type]);
-			doPanic = true;
-			//we are in sync here as we actually reached the end of
-			//expression unexpectedly
-			return insideOfUnary;
-		}
-
-		lhs->children[0] = insideOfUnary;
-#ifdef VERBOSE
-		std::string res = print_expr(lhs);
-		printf("UN %d EXPRESSION: %s\n", currentToken, res.c_str());
-#endif
-		--currentToken;
-
-	}
-	else if (tokens[currentToken].type == LEFT_PAREN) {
-		//add a grouping expr
-		exprs[exprsCount] = {GROUPING, 0, {0,0}};
-		lhs = exprs + exprsCount;
-		++exprsCount;
-		++currentToken;
-		Expr* insideOfGrouping = parse_expression(-999);
-		if(doPanic) 
-			return insideOfGrouping;
-		if(insideOfGrouping->type == EMPTY) 
-		{
-			printf("PARSE: expected a token after [(] but stream terminated\n");
-			doPanic = true;
-			//we are in sync here as we actually reached the end of
-			//expression unexpectedly
-			return insideOfGrouping;
-		}
-
-		if(tokens[currentToken].type == RIGHT_PAREN) {
-			//we are cool
-			lhs->children[0] = insideOfGrouping;
-#ifdef VERBOSE
-			std::string res = print_expr(lhs);
-			printf("GR %d EXPRESSION: %s\n", currentToken, res.c_str());
-#endif
-		} 
-		else {
-			printf("PARSE: expected ) after token [%s] of type %s in line %d\n",
-			   tokens[currentToken-1].content.c_str(),
-			   tokenNames[tokens[currentToken-1].type],
-			   tokens[currentToken-1].line);	
-
-			exprs[exprsCount] = {ERROR, &tokens[currentToken-1], {0,0}};
-			Expr* panicRes = exprs + exprsCount;	
-			++exprsCount;
-			doPanic = true;
-			synchronize_expression_parser();
-			return panicRes;
-		}
-	}
-	else {
-		printf("PARSE: unexpected token [%s] of type %s in line %d\n",
-			   tokens[currentToken].content.c_str(),
-			   tokenNames[tokens[currentToken].type],
-			   tokens[currentToken].line);
-
-		exprs[exprsCount] = {ERROR, &tokens[currentToken-1], {0,0}};
-		Expr* panicRes = exprs + exprsCount;	
-		++exprsCount;
-		doPanic = true;
-		synchronize_expression_parser();
-		return panicRes;			
-	}
 
 
-	++currentToken;
-	
-
-	while(currentToken < tokens.size() && tokens[currentToken].type != SEMICOLON)
-	{	
-		//parse operation 
-		if(opPower.find(tokens[currentToken].type) == opPower.end())  
-		{	
-#ifdef VERBOSE
-			printf("DEBUG NOTE: can't parse an operation: [%s]\n",
-				   tokenNames[tokens[currentToken].type]);
-#endif
-			break;
-		}
-		else
-		{
-			if(opPower[tokens[currentToken].type] >= power)
-			{
-				exprs[exprsCount] = {BINARY, &tokens[currentToken], {lhs, 0}};
-				lhs = exprs+exprsCount;
-				++exprsCount;
-				++currentToken;
-				// we add +1 to adject to the left associativity (otherwise the op
-				// will be right-associative
-				Expr* rhs = parse_expression(opPower[tokens[currentToken-1].type]+1);
-				if(doPanic) {
-					//just return the error partat this point,
-					//think, that it's just not correct
-					//but we will never use this tree again so it doesn't really matter
-					//at this point
-					return rhs;
-				}
-				if(rhs->type == EMPTY) 
-				{
-					printf("PARSE: expected a token but stream terminated\n");
-					doPanic = true;
-					//we are in sync here as we actually reached the end of
-					//expression unexpectedly
-					return rhs;
-				}	
-				lhs->children[1] = rhs;
-#ifdef VERBOSE	
-				std::string res = print_expr(lhs);
-				printf("OUT %d EXPRESSION: %s\n", currentToken, res.c_str());
-#endif
-
-			}
-			else
-			{
-				break;
-			}
-		}
-	}
-	return lhs;
-}
-
-
-void run(const char* src) {
-	if(exprs == nullptr)
-	{
-		exprs = (Expr*)malloc(sizeof(Expr) * 1000);
-	}
-
+void run(const char* src, bool fromRepl) {	
 	//scan tokens 
 	tokens.clear();
 	scan(src, tokens); 
-	doPanic = false;
-	exprsCount = 0;	
-	currentToken = 0;
 
-	//print info about scanned tokens:
-	
 #ifdef VERBOSE
+	//print info about scanned tokens:
 	printf("LINE  %-15s  %s\n", "TOKEN", "VALUE");	
 	for(Token tk : tokens) {
 		if(tk.type == NUMBER) {
@@ -818,44 +626,79 @@ void run(const char* src) {
 	}
 #endif
 
-	int expressionNumber = 0;
-	while(currentToken < tokens.size())
-	{
-		//parse and eval if correct
-		Expr* e = parse_expression(-999);
-		if(doPanic) {
-			// mistake is found and announced 
-			doPanic = false;
-			printf(":: panic at expression %d\n", expressionNumber);	
-			//we go to the first non-semicolon token or over the end of file
-			++currentToken;
-		}
-		else if(currentToken != tokens.size() && 
-				tokens[currentToken].type != SEMICOLON) {
-			synchronize_expression_parser();
-			printf(":: panic at expression %d\n", expressionNumber);
-			//we go to the first non-semicolon token or over the end of file
-			++currentToken;
+
+	int stmtsCount = parse_all();
+
+	if(stmtsCount > 0) {
+		if(!fromRepl) {
+			//create an execution environment
+			envs.push_back({{},{}});
 		}
 		else {
-			std::string res = print_expr(e);
-#ifdef VERBOSE
-			printf("EXPRESSION: %s\n", res.c_str());
-#endif
-			print_evaluation(eval_expression(e));
-
-			++currentToken;
+			// in repl mode we should create an execution environment only once.
+			// after we've executed the first line we want the repl to remember the
+			// variables that we created before
+		 	if(envs.size() == 0) {
+				envs.push_back({{},{}});
+			}		
 		}
-		++expressionNumber;
-		// we build a new expression tree at this point
-		exprsCount = 0;
+
+		for(int i = 0; i < globalStream.size(); ++i) {	
+			eval_statement(globalStream[i]);
+		}
 	}
+}
+
+bool init_compiler = false;
+void run_compile(const char* src) {	
+	//scan tokens 
+	tokens.clear();
+	scan(src, tokens); 
+
+#ifdef VERBOSE
+	//print info about scanned tokens:
+	printf("LINE  %-15s  %s\n", "TOKEN", "VALUE");	
+	for(Token tk : tokens) {
+		if(tk.type == NUMBER) {
+			printf("%-4d::%-15s::%s::%lf\n",
+				   tk.line,
+				   tokenNames[tk.type], 
+				   tk.content.c_str(),
+				   tk.value);
+		}
+		else {
+			printf("%-4d::%-15s::%s\n",
+				   tk.line, 
+				   tokenNames[tk.type], 
+				   tk.content.c_str());
+		}
+	}
+#endif
+	int stmtsCount = parse_all();
+
+
+
+	if(!init_compiler) {
+		init_compilation();
+	}
+	codeSectionSize = 0;
+
+	bool success = prepass();
+	if(!success) {
+		return;
+	}
+
+	for(int i = 0; i < globalStream.size(); ++i) {
+		compile_stmt(globalStream[i]);
+	}
+	compile_stmt(nullptr);
+	disassemble();	
+	write_bytecode();
 }
 
 int read_file(const char* filename, char** buffer) {
 	FILE* file = fopen(filename, "r");
-	if(file == NULL)
-	{
+	if(file == NULL) {
 		printf("Source file doesn't exit!\n");
 		return -1;
 	}
@@ -885,7 +728,7 @@ void work_from_file(const char* filename) {
 #ifdef VERBOSE
 	printf("BUFFER CONTENTS:\n%s", buf);
 #endif
-	run(buf);
+	run(buf, false);
 }
 
 void work_from_repl() {
@@ -898,7 +741,8 @@ void work_from_repl() {
 #ifdef VERBOSE
 			printf("%s\n", line);
 #endif
-			run(line);
+			run_compile(line);
+			//run(line, true);
 		}
 		else {
 			break;	
