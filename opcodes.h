@@ -25,7 +25,7 @@ enum CodeOp {
 	OP_SAVE_BP,
 	OP_CALL, //address
 	OP_CALL_NATIVE, //some handle?
-	OP_RET,
+	OP_RET, // some value
 	OP_PRINT,
 	OP_HLT,
 };

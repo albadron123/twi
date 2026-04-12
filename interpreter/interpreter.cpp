@@ -11,7 +11,8 @@ char* opStack;
 
 int instructionPointer = 0;
 int opStackPointer = 0;
-int varStackTop = 0;
+int varSP = 0;
+int varBP = 0;
 
 
 
@@ -30,9 +31,15 @@ inline double peek_op_stack_8() {
 }
 
 inline void push_in_var_stack_8(double d) {
-	*((double*)(varStackSection+varStackTop)) = d;
-	varStackTop += 8;
+	*((double*)(varStackSection+varBP+varSP)) = d;
+	varSP += 8;
 }
+
+inline void push_in_var_stack_4(int i) {
+	*((int*)(varStackSection+varBP+varSP)) = i;
+	varSP += 4;
+}
+
 
 inline double read_next_8() {
 	instructionPointer += 8;
@@ -44,12 +51,17 @@ inline int read_next_4() {
 	return *(int*)(codeSection+instructionPointer-4);
 }
 
-inline double read_var_from_stack_8(int address) {
-	return *((double*)(varStackSection+address));
+inline double read_var_from_stack_8(int globalAddress) {
+	return *((double*)(varStackSection+globalAddress));
 }
 
-inline void write_var_on_stack_8(int address, double d) {
-	*((double*)(varStackSection+address)) = d;
+inline int read_var_from_stack_4(int globalAddress) {
+	printf("read int* from %d\n", globalAddress);
+	return *((int*)(varStackSection+globalAddress));
+}
+
+inline void write_var_on_stack_8(int globalAddress, double d) {
+	*((double*)(varStackSection+globalAddress)) = d;
 }
 
 
@@ -116,7 +128,7 @@ void run(const char* src, bool runVerbose) {
 
 	instructionPointer = 0;
 	opStackPointer = 0;
-	varStackTop = 0;
+	varSP = 0;
 
 	while(((char*)codeSection)[instructionPointer] != OP_HLT) {
 		char op = ((char*)codeSection)[instructionPointer];
@@ -127,6 +139,11 @@ void run(const char* src, bool runVerbose) {
 		}
 		++instructionPointer;
 		switch(op) {
+			case OP_NO_OP:
+			{
+				printf("no op hit\n");
+				return;
+			}
 			case OP_PUSH_VALUE:
 			{
 				double val = read_next_8();
@@ -136,7 +153,7 @@ void run(const char* src, bool runVerbose) {
 			case OP_PUSH_VAR:
 			{
 				int address = read_next_4();
-				double val = read_var_from_stack_8(address);	
+				double val = read_var_from_stack_8(varBP + address);	
 				push_in_op_stack_8(val);				
 				break;
 			}
@@ -144,13 +161,13 @@ void run(const char* src, bool runVerbose) {
 			{
 				int address = read_next_4();
 				double val = peek_op_stack_8();
-				write_var_on_stack_8(address, val);	
+				write_var_on_stack_8(varBP + address, val);	
 				break;
 			}
 			case OP_MOVE_VAR_SP:
 			{
 				int address = read_next_4();
-				varStackTop = address;
+				varSP = varBP + address;
 				break;
 			}
 			case OP_ADD:
@@ -287,6 +304,40 @@ void run(const char* src, bool runVerbose) {
 			{
 				int handle = read_next_4();
 				funcs[handle]();
+				break;
+			}
+			case OP_CALL:
+			{
+				int address = read_next_4();	
+
+				printf("address: %d\n", address);
+
+				//add the stack frame (IP, BP)
+				printf("IP:%d\n", instructionPointer);
+				printf("BP:%d\n", varBP);
+
+				push_in_var_stack_4(instructionPointer);
+				push_in_var_stack_4(varBP);
+				varBP = varBP + varSP;
+				varSP = 0;
+				//setup the jump
+
+				instructionPointer = address;
+				break;
+			}
+			case OP_RET:
+			{
+				int newBP = read_var_from_stack_4(varBP-4);
+				int address = read_var_from_stack_4(varBP-8);
+				printf("BP:%d", varBP);
+				printf("NEWBP:%d", newBP);
+				varSP = (varBP-8)-newBP;
+				varBP = newBP;	
+				printf("newBP:%d\nnewSP:%d\nnewAddress:%d\n",
+						varBP,
+						varSP,
+						address);
+				instructionPointer = address;	
 				break;
 			}
 		}	

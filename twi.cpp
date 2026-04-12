@@ -728,7 +728,7 @@ void work_from_file(const char* filename) {
 #ifdef VERBOSE
 	printf("BUFFER CONTENTS:\n%s", buf);
 #endif
-	run(buf, false);
+	run_compile(buf);
 }
 
 void work_from_repl() {

@@ -7,6 +7,7 @@
 
 char* codeSection;
 int codeSectionSize = 0;
+int codeSectionMaxSize = 0;
 int codeSectionCapacity = 0;
 
 char* staticSection;
@@ -35,6 +36,7 @@ int varsBasePosition = 0;
 void init_compilation() {
 	codeSectionCapacity = 1024*1024;
 	codeSectionSize = 0;
+	codeSectionMaxSize = 0;
 	codeSection = (char*)malloc(codeSectionCapacity);
 	addressEnvs.push_back({{}});
 }
@@ -44,10 +46,10 @@ bool write_bytecode() {
     FILE* f = fopen(path, "wb");
     if (!f) return false;
 
-    size_t written = fwrite(codeSection, 1, codeSectionSize, f);
+    size_t written = fwrite(codeSection, 1, codeSectionMaxSize, f);
     fclose(f);
 
-    return written == codeSectionSize;
+    return written == codeSectionMaxSize;
 }
 
 int disassemble_index(int i) {
@@ -68,6 +70,7 @@ int disassemble_index(int i) {
 		case (char)OP_ASSIGN:
 		case (char)OP_MOVE_VAR_SP:
 		case (char)OP_CALL_NATIVE:
+		case (char)OP_CALL:
 			printf("\t%d", *(int*)(codeSection+i+1));
 			i+=4+1;
 			break;
@@ -110,16 +113,25 @@ int locate_variable(std::string s) {
 void add_code_1(char c) {
 	codeSection[codeSectionSize] = c;
 	++codeSectionSize;
+	if(codeSectionSize>codeSectionMaxSize) {
+		codeSectionMaxSize = codeSectionSize;
+	}
 }
 
 void add_code_8(double d) {
 	*(double*)(codeSection+codeSectionSize) = d;
 	codeSectionSize += 8;
+	if(codeSectionSize>codeSectionMaxSize) {
+		codeSectionMaxSize = codeSectionSize;
+	}
 }
 
 void add_code_4(int i) {
 	*(int*)(codeSection+codeSectionSize) = i;
 	codeSectionSize += 4;
+	if(codeSectionSize>codeSectionMaxSize) {
+		codeSectionMaxSize = codeSectionSize;
+	}
 }
 
 void patch_code_4(int address, int i) {
@@ -240,13 +252,24 @@ void compile_stmt(Stmt* stmt) {
 		case FUNCTION_STMT:
 		{
 			int savepoint = codeSectionSize;
+			printf("savepoint:%d\n", savepoint);
+			int varsStackPositionSavepoint = varsStackPosition;
+			varsStackPosition = 0;
 			codeSectionSize = userFunctionHandlers[stmt->lvalue->content]
 				.lineInCodeSection;	
 			//TODO: locate all passed variables
+
 			addressEnvs.push_back({{}, true});
+
 			compile_stmt(stmt->stmts[0]);
+
+			
+			add_code_1((char)OP_RET);
+
+
 			addressEnvs.pop_back();
 			codeSectionSize = savepoint;
+			varsStackPosition = varsStackPositionSavepoint;
 			return;
 		}
 		default:
@@ -312,11 +335,20 @@ void compile_expression(Expr* expr) {
 		}
 		bool isNativeFunction = false;
 		bool isUserFunction = false;
-		if(nativeFunctionHandlers.find(expr->children[0]->token->content) != 		   nativeFunctionHandlers.end())
-		{
+		if(nativeFunctionHandlers.find(expr->children[0]->token->content) != 
+		   nativeFunctionHandlers.end()) {
 			isNativeFunction = true;
 		}
+		if(userFunctionHandlers.find(expr->children[0]->token->content) != 
+		   userFunctionHandlers.end()) {
+			isUserFunction = true;
+		}
 
+		if(!isNativeFunction && !isUserFunction) {
+			printf("trying to call a functon '%s' that is never defined\n",
+				   expr->children[0]->token->content.c_str());
+			return;
+		}
 		// -- get the arguments
 		//real call
 		/*
@@ -334,7 +366,7 @@ void compile_expression(Expr* expr) {
 			add_code_4(?addressToCall?);
 		}
 		*/
-		//native function call
+		if(isUserFunction)
 		{
 			/*
 			for(...) {
@@ -342,9 +374,27 @@ void compile_expression(Expr* expr) {
 				add_code_8(?argValue?);
 			}	
 			*/
+			
+			add_code_1((char)OP_CALL);
+			add_code_4(userFunctionHandlers[expr->children[0]->token->content]
+				.lineInCodeSection);
+			return;
+		}
+		if(isNativeFunction)
+		{
+			/*
+			for(...) {
+				add_code_1((char)OP_PUSH_VAR);
+				add_code_8(?argValue?);
+			}	
+			*/
+			
 			add_code_1((char)OP_CALL_NATIVE);
 			add_code_4(nativeFunctionHandlers[expr->children[0]->token->content]);
+			return;
 		}
+		printf("unreachable area!\n");
+		//Unreachable
 		return;
 	}
 	else if(expr->type == BINARY) {
