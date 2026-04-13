@@ -1,9 +1,8 @@
 *~
 *.sw*
-*.twi
 twi
 run
-tests/*
-*.txt
+autotest
+autotest__.txt
 *.b
 

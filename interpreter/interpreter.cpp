@@ -5,64 +5,58 @@
 
 
 char* codeSection;
+int IP = 0;
 
-char* varStackSection;
-char* opStack;
+char* stack;
+int SP = 0;
+int BP = 0;
 
-int instructionPointer = 0;
-int opStackPointer = 0;
-int varSP = 0;
-int varBP = 0;
+//stack section manipulations
 
-
-
-inline void push_in_op_stack_8(double d) {
-	*((double*)(opStack+opStackPointer)) = d;
-	opStackPointer += 8;
+inline void push_stack_8(double d) {
+	*((double*)(stack+BP+SP)) = d;
+	SP += 8;
 }
 
-inline double pop_from_op_stack_8() {
-	opStackPointer -= 8;
-	return *((double*)(opStack+opStackPointer));
+inline double pop_stack_8() {
+	SP -= 8;
+	return *((double*)(stack+BP+SP));
 }
 
-inline double peek_op_stack_8() {
-	return *((double*)(opStack+opStackPointer-8));
+inline double peek_stack_8() {
+	return *((double*)(stack+SP+BP-8));
 }
 
-inline void push_in_var_stack_8(double d) {
-	*((double*)(varStackSection+varBP+varSP)) = d;
-	varSP += 8;
+inline void push_stack_4(int i) {
+	*((int*)(stack+SP+BP)) = i;
+	SP += 4;
 }
 
-inline void push_in_var_stack_4(int i) {
-	*((int*)(varStackSection+varBP+varSP)) = i;
-	varSP += 4;
+inline double read_stack_8(int globalAddress) {
+	return *((double*)(stack+globalAddress));
 }
 
+inline int read_stack_4(int globalAddress) {
+	return *((int*)(stack+globalAddress));
+}
+
+inline void write_stack_8(int globalAddress, double d) {
+	*((double*)(stack+globalAddress)) = d;
+}
+
+//code section maniputations
 
 inline double read_next_8() {
-	instructionPointer += 8;
-	return *(double*)(codeSection+instructionPointer-8);
+	IP += 8;
+	return *(double*)(codeSection+IP-8);
 }
 
 inline int read_next_4() {
-	instructionPointer += 4;
-	return *(int*)(codeSection+instructionPointer-4);
+	IP += 4;
+	return *(int*)(codeSection+IP-4);
 }
 
-inline double read_var_from_stack_8(int globalAddress) {
-	return *((double*)(varStackSection+globalAddress));
-}
 
-inline int read_var_from_stack_4(int globalAddress) {
-	printf("read int* from %d\n", globalAddress);
-	return *((int*)(varStackSection+globalAddress));
-}
-
-inline void write_var_on_stack_8(int globalAddress, double d) {
-	*((double*)(varStackSection+globalAddress)) = d;
-}
 
 
 bool read_bytecode_from_file(const char* src) {
@@ -100,12 +94,12 @@ bool read_bytecode_from_file(const char* src) {
 
 void twi_clock() {
 	printf(":: not implemented\n");
-	push_in_op_stack_8(10);
+	push_stack_8(10);
 }
 
 void twi_int() {	
 	printf(":: not implemented\n");
-	push_in_op_stack_8(10);
+	push_stack_8(10);
 }
 
 
@@ -123,21 +117,20 @@ void run(const char* src, bool runVerbose) {
 		return;
 	}
 
-	varStackSection = (char*)malloc(1024*1024*sizeof(char));
-	opStack = (char*)malloc(1024*1024*sizeof(char));
+	stack = (char*)malloc(2*1024*1024*sizeof(char));
 
-	instructionPointer = 0;
-	opStackPointer = 0;
-	varSP = 0;
+	IP = 0;
+	SP = 0;
+	BP = 0;
 
-	while(((char*)codeSection)[instructionPointer] != OP_HLT) {
-		char op = ((char*)codeSection)[instructionPointer];
+	while(((char*)codeSection)[IP] != OP_HLT) {
+		char op = ((char*)codeSection)[IP];
 		if(runVerbose) {
 			printf("%4d : %s\n", 
-					instructionPointer,
+					IP,
 					codeOpNames[(int)op]);
 		}
-		++instructionPointer;
+		++IP;
 		switch(op) {
 			case OP_NO_OP:
 			{
@@ -147,156 +140,134 @@ void run(const char* src, bool runVerbose) {
 			case OP_PUSH_VALUE:
 			{
 				double val = read_next_8();
-				push_in_op_stack_8(val);
+				push_stack_8(val);
 				break;
 			}
 			case OP_PUSH_VAR:
 			{
-				int address = read_next_4();
-				double val = read_var_from_stack_8(varBP + address);	
-				push_in_op_stack_8(val);				
+				int localAddress = read_next_4();
+				double val = read_stack_8(BP + localAddress);	
+				push_stack_8(val);				
 				break;
-			}
+			}	
 			case OP_ASSIGN:
 			{
-				int address = read_next_4();
-				double val = peek_op_stack_8();
-				write_var_on_stack_8(varBP + address, val);	
+				int localAddress = read_next_4();
+				double val = peek_stack_8();
+				write_stack_8(BP + localAddress, val);	
 				break;
-			}
-			case OP_MOVE_VAR_SP:
+			}	
+			case OP_MOVE_SP:
 			{
 				int address = read_next_4();
-				varSP = varBP + address;
+				SP = BP + address;
 				break;
 			}
 			case OP_ADD:
 			{
-				//tried to optimize the +:
-				opStackPointer -= 8;
-				*((double*)(opStack+opStackPointer-8)) +=
-					*((double*)(opStack+opStackPointer));
-				/*
-				double b = pop_from_op_stack_8();
-				double a = pop_from_op_stack_8();
-				push_in_op_stack_8(a+b);
-				*/
+				SP -= 8;
+				*((double*)(stack+BP+SP-8)) +=
+					*((double*)(stack+SP+BP));	
 				break;
 			}
 			case OP_SUB:
 			{
-				//tried to optimize the -:
-				opStackPointer -= 8;
-				*((double*)(opStack+opStackPointer-8)) -=
-					*((double*)(opStack+opStackPointer));
-				/*
-				double b = pop_from_op_stack_8();
-				double a = pop_from_op_stack_8();
-				push_in_op_stack_8(a-b);
-				*/
+				SP -= 8;
+				*((double*)(stack+BP+SP-8)) -=
+					*((double*)(stack+SP+BP));	
 				break;
 			}
 			case OP_MULT:
 			{
-				//tried to optimize the *:
-				opStackPointer -= 8;
-				*((double*)(opStack+opStackPointer-8)) *=
-					*((double*)(opStack+opStackPointer));
-				/*
-				double b = pop_from_op_stack_8();
-				double a = pop_from_op_stack_8();
-				push_in_op_stack_8(a*b);	
-				*/
+				SP -= 8;
+				*((double*)(stack+BP+SP-8)) *=
+					*((double*)(stack+SP+BP));		
 				break;
 			}
 			case OP_DIV:
 			{
-				//tried to optimize the /:
-				opStackPointer -= 8;
-				*((double*)(opStack+opStackPointer-8)) /=
-					*((double*)(opStack+opStackPointer));
-				/*
-				double b = pop_from_op_stack_8();
-				double a = pop_from_op_stack_8();
-				push_in_op_stack_8(a/b);
-				*/
+				SP -= 8;
+				*((double*)(stack+BP+SP-8)) /=
+					*((double*)(stack+SP+BP));	
 				break;
 			}
 			case OP_NEG:
 			{
-				double a = pop_from_op_stack_8();
-				push_in_op_stack_8(-a);
+				double a = pop_stack_8();
+				push_stack_8(-a);
 				break;
 			}
 			case OP_AND:
 			{
-				double a = pop_from_op_stack_8();
-				double b = pop_from_op_stack_8();
-				push_in_op_stack_8((double)((bool)(int)(a) && (bool)(int)(b)));
+				double a = pop_stack_8();
+				double b = pop_stack_8();
+				push_stack_8((double)((bool)(int)(a) && (bool)(int)(b)));
 				break;
 			}
 			case OP_OR:
 			{
-				double a = pop_from_op_stack_8();	
-				double b = pop_from_op_stack_8();
-				push_in_op_stack_8((double)((bool)(int)(a) || (bool)(int)(b)));
+				double a = pop_stack_8();	
+				double b = pop_stack_8();
+				push_stack_8((double)((bool)(int)(a) || (bool)(int)(b)));
 				break;	
 			}
 			case OP_NOT:
 			{
-				double a = pop_from_op_stack_8();
-				push_in_op_stack_8(!(bool)(int)a);
+				double a = pop_stack_8();
+				push_stack_8(!(bool)(int)a);
 				break;
 			}
 			case OP_EQ:
 			{
-				double a = pop_from_op_stack_8();
-				double b = pop_from_op_stack_8();
-				push_in_op_stack_8((double)(a == b));
+				double a = pop_stack_8();
+				double b = pop_stack_8();
+				push_stack_8((double)(a == b));
 				break;
 			}
 			case OP_LT:
 			{
-				double b = pop_from_op_stack_8();
-				double a = pop_from_op_stack_8();
-				push_in_op_stack_8(a < b);
+				double b = pop_stack_8();
+				double a = pop_stack_8();
+				push_stack_8(a < b);
 				break;
 			}
 			case OP_LE:
 			{
-				double b = pop_from_op_stack_8();
-				double a = pop_from_op_stack_8();
-				push_in_op_stack_8(a <= b);
+				double b = pop_stack_8();
+				double a = pop_stack_8();
+				push_stack_8(a <= b);
 				break;
 			}
+			/*
 			case OP_DECL_VAR: 
 			{
 				double val = pop_from_op_stack_8();
 				push_in_var_stack_8(val);
 				break;
 			}
+			*/
 			case OP_JMP_FALSE:
 			{
-				bool val = (bool)(int)pop_from_op_stack_8();
+				bool val = (bool)(int)pop_stack_8();
 				if(!val) {
 					int address = read_next_4();
-					instructionPointer = address;
+					IP = address;
 				}
 				else
 				{
-					instructionPointer += 4;
+					IP += 4;
 				}
 				break;
 			}
 			case OP_JMP:
 			{
 				int address = read_next_4();
-				instructionPointer = address;
+				IP = address;
 				break;
 			}
 			case OP_PRINT:
 			{
-				double val = pop_from_op_stack_8();
+				double val = pop_stack_8();
 				printf(":: %g\n", val);
 				break;
 			}
@@ -310,34 +281,24 @@ void run(const char* src, bool runVerbose) {
 			{
 				int address = read_next_4();	
 
-				printf("address: %d\n", address);
+				push_stack_4(IP);
+				push_stack_4(BP);
 
-				//add the stack frame (IP, BP)
-				printf("IP:%d\n", instructionPointer);
-				printf("BP:%d\n", varBP);
+				BP = BP + SP;
+				SP = 0;
 
-				push_in_var_stack_4(instructionPointer);
-				push_in_var_stack_4(varBP);
-				varBP = varBP + varSP;
-				varSP = 0;
-				//setup the jump
-
-				instructionPointer = address;
+				IP = address;
 				break;
 			}
 			case OP_RET:
 			{
-				int newBP = read_var_from_stack_4(varBP-4);
-				int address = read_var_from_stack_4(varBP-8);
-				printf("BP:%d", varBP);
-				printf("NEWBP:%d", newBP);
-				varSP = (varBP-8)-newBP;
-				varBP = newBP;	
-				printf("newBP:%d\nnewSP:%d\nnewAddress:%d\n",
-						varBP,
-						varSP,
-						address);
-				instructionPointer = address;	
+				int newBP = read_stack_4(BP-4);
+				int address = read_stack_4(BP-8);
+				
+				SP = (BP-8)-newBP;
+				BP = newBP;	
+								
+				IP = address;	
 				break;
 			}
 		}	

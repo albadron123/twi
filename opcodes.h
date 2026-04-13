@@ -21,8 +21,7 @@ enum CodeOp {
 	OP_DECL_VAR, 
 	OP_JMP_FALSE, //address
 	OP_JMP, //address
-	OP_MOVE_VAR_SP, //address
-	OP_SAVE_BP,
+	OP_MOVE_SP, //address
 	OP_CALL, //address
 	OP_CALL_NATIVE, //some handle?
 	OP_RET, // some value

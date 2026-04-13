@@ -1,0 +1,35 @@
+var x = 1; 
+fun hello() 
+{
+	var x = 3; 
+	var y = 4;
+	{
+		1; 
+		var z = 5; 
+		print x+z;
+	} 
+	print x+y;
+} 
+
+hello(); 
+print x; 
+
+{
+	x = 5; 
+	hello(); 
+	print x;
+} 
+
+print x;
+
+/*
+MY EXPECTATION:
+::8
+::7
+::1
+::8
+::7
+::1
+::1
+*/
+

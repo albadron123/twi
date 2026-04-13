@@ -1,0 +1,18 @@
+var x = 5;
+
+fun h() 
+{
+	var x = 1;
+	var y = 2;
+	print x+y;
+}
+
+var z = 3;
+var y = 3;
+
+print x + y + z;
+
+h();
+h();
+
+print x + y + z;

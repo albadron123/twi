@@ -10,6 +10,10 @@ int codeSectionSize = 0;
 int codeSectionMaxSize = 0;
 int codeSectionCapacity = 0;
 
+int currentSP = 0;
+int currentBP = 0;
+
+
 char* staticSection;
 
 struct AddressEnv {
@@ -30,13 +34,12 @@ struct UserFunctionHandler {
 };
 std::map<std::string, UserFunctionHandler> userFunctionHandlers = {};
 
-int varsStackPosition = 0;
-int varsBasePosition = 0;
-
 void init_compilation() {
 	codeSectionCapacity = 1024*1024;
 	codeSectionSize = 0;
 	codeSectionMaxSize = 0;
+	currentSP = 0;
+	currentBP = 0;
 	codeSection = (char*)malloc(codeSectionCapacity);
 	addressEnvs.push_back({{}});
 }
@@ -68,7 +71,7 @@ int disassemble_index(int i) {
 		case (char)OP_JMP:
 		case (char)OP_JMP_FALSE:
 		case (char)OP_ASSIGN:
-		case (char)OP_MOVE_VAR_SP:
+		case (char)OP_MOVE_SP:
 		case (char)OP_CALL_NATIVE:
 		case (char)OP_CALL:
 			printf("\t%d", *(int*)(codeSection+i+1));
@@ -202,18 +205,18 @@ void compile_stmt(Stmt* stmt) {
 		}	
 		case GROUP_STMT:
 		{
-			int groupingStackAddress = varsStackPosition;
+			int groupingSP = currentSP;
 			addressEnvs.push_back({{}});
 
 			for(int i = 0; i < stmt->group.size(); ++i) {
 				compile_stmt(stmt->group[i]);
 			}
 
-			varsStackPosition = groupingStackAddress;
+			currentSP = groupingSP;
 			addressEnvs.pop_back();
 
-			add_code_1((char)OP_MOVE_VAR_SP);
-			add_code_4(varsStackPosition);
+			add_code_1((char)OP_MOVE_SP);
+			add_code_4(currentSP);
 			return;
 		}
 		case WHILE_STMT:
@@ -233,6 +236,7 @@ void compile_stmt(Stmt* stmt) {
 		{		
 			compile_expression(stmt->exprs[0]);
 			add_code_1((char)OP_PRINT);
+			currentSP -= 8;
 			return;
 		}
 		case EXPR_STMT:
@@ -242,19 +246,20 @@ void compile_stmt(Stmt* stmt) {
 		}
 		case VAR_STMT:
 		{
-			compile_expression(stmt->exprs[0]);
-			add_code_1((char)OP_DECL_VAR);
+			//we know before the expression is evaluated that
+			//at this point we are expecting the result
 			addressEnvs[addressEnvs.size()-1]
-				.vars[stmt->lvalue->content] = varsStackPosition;	
-			varsStackPosition += 8;
+				.vars[stmt->lvalue->content] = currentSP;
+
+			compile_expression(stmt->exprs[0]);	
 			return;
 		}
 		case FUNCTION_STMT:
 		{
 			int savepoint = codeSectionSize;
 			printf("savepoint:%d\n", savepoint);
-			int varsStackPositionSavepoint = varsStackPosition;
-			varsStackPosition = 0;
+			int savepointSP  = currentSP;
+			currentSP = 0;
 			codeSectionSize = userFunctionHandlers[stmt->lvalue->content]
 				.lineInCodeSection;	
 			//TODO: locate all passed variables
@@ -269,7 +274,7 @@ void compile_stmt(Stmt* stmt) {
 
 			addressEnvs.pop_back();
 			codeSectionSize = savepoint;
-			varsStackPosition = varsStackPositionSavepoint;
+			currentSP = savepointSP;
 			return;
 		}
 		default:
@@ -283,6 +288,7 @@ void compile_expression(Expr* expr) {
 	if(expr->token != 0 && expr->token->type == NUMBER) {
 		add_code_1((char)OP_PUSH_VALUE);
 		add_code_8(expr->token->value);		
+		currentSP += 8;
 		return;
 	}
 	else if (expr->token != 0 && expr->token->type == STRING) {
@@ -291,11 +297,13 @@ void compile_expression(Expr* expr) {
 	else if (expr->token != 0 && expr->token->type == TRUE) {
 		add_code_1((char)OP_PUSH_VALUE);
 		add_code_8(1);		
+		currentSP += 8;
 		return;
 	}
 	else if (expr->token != 0 && expr->token->type == FALSE) {
 		add_code_1((char)OP_PUSH_VALUE);
-		add_code_8(0);
+		add_code_8(0);	
+		currentSP += 8;
 		return;
 	}
 	else if (expr->token != 0 && expr->token->type == NIL) {
@@ -305,7 +313,8 @@ void compile_expression(Expr* expr) {
 		int address = locate_variable(expr->token->content);			
 		if(address >= 0) {
 			add_code_1((char)OP_PUSH_VAR);
-			add_code_4(address);
+			add_code_4(address);	
+			currentSP += 8;
 			return;
 		}
 		return;
@@ -377,7 +386,9 @@ void compile_expression(Expr* expr) {
 			
 			add_code_1((char)OP_CALL);
 			add_code_4(userFunctionHandlers[expr->children[0]->token->content]
-				.lineInCodeSection);
+				.lineInCodeSection);	
+			//after the call we expect the return value to be pushed on the stack
+			currentSP += 8;
 			return;
 		}
 		if(isNativeFunction)
@@ -391,6 +402,8 @@ void compile_expression(Expr* expr) {
 			
 			add_code_1((char)OP_CALL_NATIVE);
 			add_code_4(nativeFunctionHandlers[expr->children[0]->token->content]);
+			//after the call we expect the return value to be pushed on the stack
+			currentSP += 8;
 			return;
 		}
 		printf("unreachable area!\n");
@@ -413,12 +426,14 @@ void compile_expression(Expr* expr) {
 			compile_expression(expr->children[1]);
 			compile_expression(expr->children[0]);
 			add_code_1((char)OP_LT);
+			currentSP -= 16;
 			return;
 		}
 		else if (expr->token->type == GREATER_EQUAL) {
 			compile_expression(expr->children[1]);
 			compile_expression(expr->children[0]);
 			add_code_1((char)OP_LE);
+			currentSP -= 16;
 			return;
 		}
 		else {
@@ -427,34 +442,44 @@ void compile_expression(Expr* expr) {
 			switch(expr->token->type) {
 				case PLUS:	
 					add_code_1((char)OP_ADD);
+					currentSP -= 16;
 					return;
 				case MINUS:	
 					add_code_1((char)OP_SUB);
+					currentSP -= 16;
 					return;
 				case STAR:
 					add_code_1((char)OP_MULT);			
+					currentSP -= 16;
 					return;
 				case SLASH:
 					add_code_1((char)OP_DIV);	
+					currentSP -= 16;
 					return;	
 				case AND:
 					add_code_1((char)OP_AND);
+					currentSP -= 16;
 					return;
 				case OR:
 					add_code_1((char)OP_OR);
+					currentSP -= 16;
 					return;
 				case LESS:
 					add_code_1((char)OP_LT);
+					currentSP -= 16;
 					return;
 				case LESS_EQUAL:
 					add_code_1((char)OP_LE);
+					currentSP -= 16;
 					return;
 				case EQUAL_EQUAL:
 					add_code_1((char)OP_EQ);
+					currentSP -= 16;
 					return;
 				case BANG_EQUAL:
 					add_code_1((char)OP_EQ);
 					add_code_1((char)OP_NOT);
+					currentSP -= 16;
 					return;
 				default: 
 					printf("some binary operation is not supported\n");
