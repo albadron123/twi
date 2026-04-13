@@ -98,7 +98,8 @@ int main() {
 						testsDetected[num] = true;	
 					}
 					else {
-						printf("UNDETECTED TEST FOR: result_%d.txt\n", num);
+						printf("\033[01;1m\x1b[31mUNDETECTED TEST FOR:\x1b[0m result_%d.txt\n", 
+							   num);
 					}
 				}
 			} catch (const std::exception) {
@@ -110,7 +111,8 @@ int main() {
 
 	for(auto& pair : testsDetected) {
 		if(!pair.second) {	
-			printf("UNDETECTED RESULT FOR: test_%d.twi\n", pair.first);
+			printf("\033[01;1m\x1b[31mUNDETECTED RESULT FOR:\x1b[0m test_%d.twi\n", 
+				   pair.first);
 		}	
 	}
 
@@ -131,10 +133,10 @@ int main() {
 
 			bool equals = files_equal("autotest__.txt", test_result.c_str());
 			if(equals) {
-				printf("PASSED: %s\n", test_name.c_str());
+				printf("\033[01;1m\x1b[32mPASSED:\x1b[0m %s\n", test_name.c_str());
 			}
 			else {
-				printf("FAILED: %s\n", test_name.c_str());
+				printf("\033[01;1m\x1b[31mFAILED:\x1b[0m %s\n", test_name.c_str());
 			}
 		}
 	}
