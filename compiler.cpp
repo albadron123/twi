@@ -268,13 +268,26 @@ void compile_stmt(Stmt* stmt) {
 
 			compile_stmt(stmt->stmts[0]);
 
-			
+			//push the default return value & return 
+			add_code_1((char)OP_PUSH_VALUE);
+			add_code_8(0);	
 			add_code_1((char)OP_RET);
-
 
 			addressEnvs.pop_back();
 			codeSectionSize = savepoint;
 			currentSP = savepointSP;
+			return;
+		}
+		case RETURN_STMT:
+		{
+			if(stmt->exprs[0]->type == EMPTY) {
+				add_code_1((char)OP_PUSH_VALUE);
+				add_code_8(0);	
+				add_code_1((char)OP_RET);
+				return;
+			}
+			compile_expression(stmt->exprs[0]);
+			add_code_1((char)OP_RET);
 			return;
 		}
 		default:
@@ -412,7 +425,7 @@ void compile_expression(Expr* expr) {
 	}
 	else if(expr->type == BINARY) {
 		if(expr->token->type == EQUAL) {
-			int address = locate_variable(expr->token->content);			
+			int address = locate_variable(expr->children[0]->token->content);			
 			if(address >= 0)
 			{	
 				compile_expression(expr->children[1]);	

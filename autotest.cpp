@@ -45,8 +45,19 @@ bool files_equal(const char *p1, const char *p2) {
     return true;
 }
 
-int main() {
-
+int main(int argc, char** argv) {
+	bool verbose = false;
+	if(argc > 1)
+	{
+		if(argc == 2 && strcmp(argv[1], "-v") == 0) {
+			verbose = true;
+		}
+		else {
+			printf("can't parse the arguments to the autotest program\n");
+			return 0;
+		}
+		
+	}
 	//get the names of the tests:
 
 	struct dirent **namelist;
@@ -127,8 +138,14 @@ int main() {
 			std::string test_result = "tests/result_";
 			test_result += std::to_string(pair.first);
 			test_result += ".txt";
-
+		
+			if(verbose) {
+				system(("./twi " + test_name + "").c_str());
+			}	
 			system(("./twi " + test_name + " > autotest__.txt").c_str());
+			if(verbose) {
+				system("./interpreter/run interpreter/bytecode.b");
+			}
 			system("./interpreter/run interpreter/bytecode.b > autotest__.txt");
 
 			bool equals = files_equal("autotest__.txt", test_result.c_str());

@@ -3,6 +3,12 @@
 #include<stdlib.h>
 #include<string.h>
 
+// COMPILATION FLAGS
+bool verbose;
+bool traceStack;
+
+
+////////////////////
 
 char* codeSection;
 int IP = 0;
@@ -111,7 +117,17 @@ NativeFunction funcs[] =
 };
 
 
-void run(const char* src, bool runVerbose) {
+void print_stack_trace() {
+	printf("===STACK TRACE===\n");
+	for(int i = 0; i < BP + SP; ++i)
+	{
+		printf("%04x ", (int)stack[i]);
+	}
+	printf("\n");
+}
+
+
+void run(const char* src) {
 	if(!read_bytecode_from_file(src)) {
 		printf("panic: coudn't read the bytecode\n");
 		return;
@@ -125,11 +141,15 @@ void run(const char* src, bool runVerbose) {
 
 	while(((char*)codeSection)[IP] != OP_HLT) {
 		char op = ((char*)codeSection)[IP];
-		if(runVerbose) {
+		if(traceStack) {	
+			print_stack_trace();
+		}
+		if(verbose) {
 			printf("%4d : %s\n", 
 					IP,
 					codeOpNames[(int)op]);
-		}
+		}	
+
 		++IP;
 		switch(op) {
 			case OP_NO_OP:
@@ -292,6 +312,8 @@ void run(const char* src, bool runVerbose) {
 			}
 			case OP_RET:
 			{
+				double returnValue = pop_stack_8();
+
 				int newBP = read_stack_4(BP-4);
 				int address = read_stack_4(BP-8);
 				
@@ -299,6 +321,9 @@ void run(const char* src, bool runVerbose) {
 				BP = newBP;	
 								
 				IP = address;	
+				
+				push_stack_8(returnValue);
+
 				break;
 			}
 		}	
@@ -308,23 +333,34 @@ void run(const char* src, bool runVerbose) {
 
 
 int main(int argc, char** argv) {
+	verbose = false;
+	traceStack = false;
 	if(argc == 2) {
-		run(argv[1], false);
+		run(argv[1]);
 	}
-	else if(argc == 3) {
-		if(strcmp(argv[2],"-v")==0)
-		{
-			run(argv[1], true);
+	else if (argc > 2) {
+		for(int i = 2; i < argc; ++i) {
+			if(strcmp(argv[i],"-v")==0) {	
+				verbose = true;
+			}
+			else if (strcmp(argv[i], "-t")==0) {
+				traceStack = true;	
+			}
+			else {
+				printf("%d-th argument (%s) was incorrect.\n", i-1, argv[i]);
+				printf("supported flags:\n");
+				printf("-v -- verbose\n");
+				printf("-t -- enable stack tracing\n");	
+				return 0;
+			}
 		}
-		else 
-		{
-			printf("1 arg: src file with bytecode\n");
-			printf("2 arg: -v -- for verbose execution\n");
-		}
-	}
+		run(argv[1]);
+	}	
 	else {
 		printf("1 arg: src file with bytecode\n");
-		printf("2 arg: -v -- for verbose execution\n");
+		printf("supported flags:\n");
+		printf("-v -- verbose\n");
+		printf("-t -- enable stack tracing\n");	
 	}
 	return 0;
 }

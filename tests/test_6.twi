@@ -1,0 +1,26 @@
+fun one() {
+	return 1;
+}
+
+fun two() {
+	var x = one() + one();
+	if x < 10:
+	{
+		return x;
+	}
+	else:
+	{
+		return 1;
+	}
+}
+
+fun zero() {
+	var x = 10;
+	if x == 50: 
+	{
+		return x;
+	}
+}
+
+print one() * two() * two() + one() + zero();
+print one() + two() * zero();
