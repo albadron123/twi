@@ -312,12 +312,15 @@ void run(const char* src) {
 			}
 			case OP_RET:
 			{
+				//this offset is the size in stack dedicated for local vars
+				int offsetSize = read_next_4();
+
 				double returnValue = pop_stack_8();
 
 				int newBP = read_stack_4(BP-4);
 				int address = read_stack_4(BP-8);
 				
-				SP = (BP-8)-newBP;
+				SP = (BP-8)-newBP-offsetSize;
 				BP = newBP;	
 								
 				IP = address;	

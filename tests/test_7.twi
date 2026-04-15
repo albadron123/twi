@@ -1,0 +1,14 @@
+var x = 5;
+
+fun print_sum(a,b,c) {
+	print a+b+c;
+}
+
+fun sum_plus_one(a,b,c) {
+	var x = 1;
+	return a+b+c+x;
+}
+
+print_sum(1,2,3);
+
+print sum_plus_one(1,2,3) + x + sum_plus_one(1,1,2*10);

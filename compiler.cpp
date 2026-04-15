@@ -14,6 +14,8 @@ int currentSP = 0;
 int currentBP = 0;
 
 
+int currentFunctionArgsSize = 0;
+
 char* staticSection;
 
 struct AddressEnv {
@@ -74,6 +76,7 @@ int disassemble_index(int i) {
 		case (char)OP_MOVE_SP:
 		case (char)OP_CALL_NATIVE:
 		case (char)OP_CALL:
+		case (char)OP_RET:
 			printf("\t%d", *(int*)(codeSection+i+1));
 			i+=4+1;
 			break;
@@ -90,12 +93,18 @@ void disassemble() {
 	}
 }
 
-int locate_variable(std::string s) {
+bool locate_variable(std::string s, int* res) {
+	*res = 0;
 	int envId = addressEnvs.size()-1;
-	while(envId >= 0 && !addressEnvs[envId].functionFrame) {	
+	while(envId >= 0) {	
 		if(addressEnvs[envId].vars.find(s) != 
 		   addressEnvs[envId].vars.end()) {
-			return addressEnvs[envId].vars[s];
+			*res = addressEnvs[envId].vars[s];
+			return true;
+		}
+		if(addressEnvs[envId].functionFrame)
+		{
+			break;
 		}
 		--envId;
 	}
@@ -110,7 +119,7 @@ int locate_variable(std::string s) {
 	*/
 	printf("Unable to locate variable '%s' in the current scope.\n",
 			s.c_str());
-	return -1;
+	return false;
 }
 
 void add_code_1(char c) {
@@ -262,16 +271,31 @@ void compile_stmt(Stmt* stmt) {
 			currentSP = 0;
 			codeSectionSize = userFunctionHandlers[stmt->lvalue->content]
 				.lineInCodeSection;	
-			//TODO: locate all passed variables
-
+			
 			addressEnvs.push_back({{}, true});
+			
+			//NOTE: later we may need to change this to get params of different size
+			currentFunctionArgsSize = 0;
+			int arity = 0;
+			if(stmt->extraIndex >= 0)
+			{
+				arity = functionParams[stmt->extraIndex].size();
+				currentFunctionArgsSize = 8 * arity;
+				for(int i = 0; i < arity; ++i) {
+					addressEnvs[addressEnvs.size()-1]
+						.vars[functionParams[stmt->extraIndex][i]->content] = 
+						-8 - 8 * (arity - i);
+				}	
+			}
 
 			compile_stmt(stmt->stmts[0]);
+
 
 			//push the default return value & return 
 			add_code_1((char)OP_PUSH_VALUE);
 			add_code_8(0);	
 			add_code_1((char)OP_RET);
+			add_code_4(currentFunctionArgsSize);
 
 			addressEnvs.pop_back();
 			codeSectionSize = savepoint;
@@ -284,10 +308,12 @@ void compile_stmt(Stmt* stmt) {
 				add_code_1((char)OP_PUSH_VALUE);
 				add_code_8(0);	
 				add_code_1((char)OP_RET);
+				add_code_4(currentFunctionArgsSize);
 				return;
 			}
 			compile_expression(stmt->exprs[0]);
-			add_code_1((char)OP_RET);
+			add_code_1((char)OP_RET);	
+			add_code_4(currentFunctionArgsSize);
 			return;
 		}
 		default:
@@ -323,8 +349,10 @@ void compile_expression(Expr* expr) {
 		return;
 	}
 	else if (expr->token != 0 && expr->token->type == IDENTIFIER) {
-		int address = locate_variable(expr->token->content);			
-		if(address >= 0) {
+		int address;			
+		bool located = locate_variable(expr->token->content, 
+									   &address);
+		if(located) {
 			add_code_1((char)OP_PUSH_VAR);
 			add_code_4(address);	
 			currentSP += 8;
@@ -371,32 +399,17 @@ void compile_expression(Expr* expr) {
 				   expr->children[0]->token->content.c_str());
 			return;
 		}
-		// -- get the arguments
-		//real call
-		/*
+				
+		//this will push args in stack
+		if(expr->extraIndex != -1)
 		{
-			add_code_1((char)OP_SAVE_BP);
-			addressEnvs[addressEnvs.size()-1].stackPointer = varsStackPosition;
-			addressEnvs.push_back({{}, true, -1};
-			
-			for(...) {
-				add_code_1((char)OP_PUSH_VAR);
-				add_code_8(?argValue?);
+			for(int i = 0; i < functionArgs[expr->extraIndex].size(); ++i) {
+				compile_expression(functionArgs[expr->extraIndex][i]);
 			}
-			
-			add_code_1((char)OP_CALL);
-			add_code_4(?addressToCall?);
 		}
-		*/
+
 		if(isUserFunction)
-		{
-			/*
-			for(...) {
-				add_code_1((char)OP_PUSH_VAR);
-				add_code_8(?argValue?);
-			}	
-			*/
-			
+		{		
 			add_code_1((char)OP_CALL);
 			add_code_4(userFunctionHandlers[expr->children[0]->token->content]
 				.lineInCodeSection);	
@@ -406,13 +419,6 @@ void compile_expression(Expr* expr) {
 		}
 		if(isNativeFunction)
 		{
-			/*
-			for(...) {
-				add_code_1((char)OP_PUSH_VAR);
-				add_code_8(?argValue?);
-			}	
-			*/
-			
 			add_code_1((char)OP_CALL_NATIVE);
 			add_code_4(nativeFunctionHandlers[expr->children[0]->token->content]);
 			//after the call we expect the return value to be pushed on the stack
@@ -425,8 +431,10 @@ void compile_expression(Expr* expr) {
 	}
 	else if(expr->type == BINARY) {
 		if(expr->token->type == EQUAL) {
-			int address = locate_variable(expr->children[0]->token->content);			
-			if(address >= 0)
+			int address = 0;
+			bool located = locate_variable(expr->children[0]->token->content, 
+										   &address);
+			if(located)
 			{	
 				compile_expression(expr->children[1]);	
 				add_code_1((char)OP_ASSIGN);
