@@ -140,15 +140,15 @@ bool eval_statement(Stmt* stmt) {
 		case VAR_STMT:
 		{
 			EvalResult res = eval_expression(stmt->exprs[0]);
-			res.name = stmt->lvalue->content;
-			envs[envs.size()-1].vars[stmt->lvalue->content] = res;
+			res.name = stmt->lvalue->token->content;
+			envs[envs.size()-1].vars[stmt->lvalue->token->content] = res;
 			return true;
 		}
 		case FUNCTION_STMT:
 		{
 			std::string functionDescription = 
 				"(func " + 
-				stmt->lvalue->content +
+				stmt->lvalue->token->content +
 				" decl :: ";
 			if(stmt->extraIndex >= 0) {
 				for(int i = 0; i < functionParams[stmt->extraIndex].size()-1; ++i) {
@@ -163,7 +163,7 @@ bool eval_statement(Stmt* stmt) {
 				functionDescription += "no args)";
 			}
 			printf("%s\n", functionDescription.c_str());	
-			envs[envs.size()-1].funcs[stmt->lvalue->content] = {
+			envs[envs.size()-1].funcs[stmt->lvalue->token->content] = {
 				stmt->stmts[0], 
 				(stmt->extraIndex == -1)?
 					0: 

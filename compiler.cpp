@@ -161,19 +161,19 @@ bool prepass() {
 	int delta = 500;
 	for(int i = 0; i < globalStream.size(); ++i) {	
 		if(globalStream[i]->type == FUNCTION_STMT) {
-			if(userFunctionHandlers.find(globalStream[i]->lvalue->content) !=
+			if(userFunctionHandlers.find(globalStream[i]->lvalue->token->content) !=
 			   userFunctionHandlers.end()) {
 				printf("Function '%s' declared more then once\n",
-					   globalStream[i]->lvalue->content.c_str());
+					   globalStream[i]->lvalue->token->content.c_str());
 				return false;
 			}
-			if(nativeFunctionHandlers.find(globalStream[i]->lvalue->content) !=
+			if(nativeFunctionHandlers.find(globalStream[i]->lvalue->token->content) !=
 			   nativeFunctionHandlers.end()) {
 				printf("Function '%s' can't be declared (conficts with native func)\n",
-					   globalStream[i]->lvalue->content.c_str());
+					   globalStream[i]->lvalue->token->content.c_str());
 				return false;
 			}
-			userFunctionHandlers[globalStream[i]->lvalue->content] = {
+			userFunctionHandlers[globalStream[i]->lvalue->token->content] = {
 				i, //line in stmt stream
 				positionInCodeSection, 
 			};
@@ -258,9 +258,17 @@ void compile_stmt(Stmt* stmt) {
 			//we know before the expression is evaluated that
 			//at this point we are expecting the result
 			addressEnvs[addressEnvs.size()-1]
-				.vars[stmt->lvalue->content] = currentSP;
+				.vars[stmt->lvalue->token->content] = currentSP;
 
 			compile_expression(stmt->exprs[0]);	
+			return;
+		}
+		case ARRAY_STMT:
+		{
+			addressEnvs[addressEnvs.size()-1]
+				.vars[stmt->lvalue->token->content] = currentSP;
+			compile_expression(stmt->exprs[0]);
+			add_code_1((char)OP_ALLOC);
 			return;
 		}
 		case FUNCTION_STMT:
@@ -269,7 +277,7 @@ void compile_stmt(Stmt* stmt) {
 			printf("savepoint:%d\n", savepoint);
 			int savepointSP  = currentSP;
 			currentSP = 0;
-			codeSectionSize = userFunctionHandlers[stmt->lvalue->content]
+			codeSectionSize = userFunctionHandlers[stmt->lvalue->token->content]
 				.lineInCodeSection;	
 			
 			addressEnvs.push_back({{}, true});
@@ -375,6 +383,12 @@ void compile_expression(Expr* expr) {
 			return;
 		}
 	}
+	else if(expr->type == INDEX) {
+		compile_expression(expr->children[1]);
+		compile_expression(expr->children[0]);
+		add_code_1((char)OP_INDEX);
+		return;
+	}
 	else if(expr->type == CALL) {
 		// -- check if it is a native or a real call
 		if(expr->children[0]->token != 0 && 
@@ -431,17 +445,28 @@ void compile_expression(Expr* expr) {
 	}
 	else if(expr->type == BINARY) {
 		if(expr->token->type == EQUAL) {
-			int address = 0;
-			bool located = locate_variable(expr->children[0]->token->content, 
-										   &address);
-			if(located)
-			{	
-				compile_expression(expr->children[1]);	
-				add_code_1((char)OP_ASSIGN);
-				add_code_4(address);
+			
+			if(expr->children[0]->type  == INDEX)
+			{
+				compile_expression(expr->children[0]);	
+				compile_expression(expr->children[1]);
+				add_code_1((char)OP_ASSIGN_HEAP);
 				return;
 			}
-			return;
+			else
+			{
+				int address = 0;
+				bool located = locate_variable(expr->children[0]->token->content, 
+											   &address);
+				if(located)
+				{	
+					compile_expression(expr->children[1]);	
+					add_code_1((char)OP_ASSIGN);
+					add_code_4(address);
+					return;
+				}
+				return;
+			}
 		}
 		else if (expr->token->type == GREATER) {
 			compile_expression(expr->children[1]);

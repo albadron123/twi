@@ -12,8 +12,6 @@ I did not restrict myself with c-constructs and did some std::vectors and std::m
 
 **KINDA A ROADMAP:** 
 *I think, that nobody will see this page anyway, so i will write sort-of-a-roadmap of the project here (not a real project, just some messing around).*
-- Make functions in bytecode
-- Write a fibonacci test on the bytecode implementation
 - Add appropriate error handling (some robustnest is good I think)
 - Add static/dynamic arrays or any other indexed data structure
 - Add types (in bytecode right now everything is just a number, I want to use the static memory and do something cool with it. RN i don't know whether I really want static or dynamic types. (Probably, will try to do bytecode on static types.)
@@ -23,3 +21,12 @@ I did not restrict myself with c-constructs and did some std::vectors and std::m
 - Make both REPL & file compiling work correctly (probably add some flags)
 - ???
 - abandon the project and do something either more real or more esoteric
+
+**SOME IDEAS (not nessesary will do them):**
+- Correct debug-mode stack tracing utility
+
+**DONE**
+
+- Make functions in bytecode
+- Write a fibonacci test on the bytecode implementation (+- 30 sec.)
+

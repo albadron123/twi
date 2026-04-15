@@ -40,6 +40,12 @@ bool scan(const char * src, std::vector<Token>& out) {
 			case '}':
 				out.push_back({RIGHT_BRACE, "", 0, line});
 				break;
+			case '[':
+				out.push_back({LEFT_BRACKET, "", 0, line});
+				break;
+			case ']':
+				out.push_back({RIGHT_BRACKET, "", 0, line});
+				break;
 			case '.':
 				out.push_back({DOT, "", 0, line});
 				break;

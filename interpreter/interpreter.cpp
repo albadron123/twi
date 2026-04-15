@@ -17,7 +17,26 @@ char* stack;
 int SP = 0;
 int BP = 0;
 
+char* heap;
+int heapSize = 1024*1024*1024;
+int heapPtr = 0;
+
+
 //stack section manipulations
+
+int alloc_memory_heap(int size) {
+	*(double*)(heap+heapPtr) = (double)size;
+	heapPtr += (size+1)*8;
+	return heapPtr - (size)*8;
+}
+
+inline int get_heap(int pos) {
+	return *(double*)(heap+pos);
+}
+
+inline int set_heap(int pos, double value) {
+	*(double*)(heap+pos) = value;
+}
 
 inline void push_stack_8(double d) {
 	*((double*)(stack+BP+SP)) = d;
@@ -327,6 +346,29 @@ void run(const char* src) {
 				
 				push_stack_8(returnValue);
 
+				break;
+			}
+
+			case OP_ALLOC:
+			{
+				double size = pop_stack_8();
+				double address = alloc_heap((int)size);	
+				push_stack_8(address);
+				break;
+			}
+
+			case OP_INDEX:
+			{
+				double base = pop_stack_8();
+				double index = pop_stack_8();
+				int address = (int)base + ((int)index)*8;
+				double value = get_heap(address);	
+				push_stack_8(value);
+				break;
+			}
+
+			case OP_ASSIGN_HEAP:
+			{
 				break;
 			}
 		}	

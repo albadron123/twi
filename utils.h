@@ -10,6 +10,8 @@ enum TokenType {
 	RIGHT_PAREN,
 	LEFT_BRACE,
 	RIGHT_BRACE,
+	LEFT_BRACKET,
+	RIGHT_BRACKET,
 	COMMA,
 	DOT,
 	MINUS,
@@ -69,6 +71,8 @@ enum ExprType {
 	GROUPING,
 	LITERAL,
 	CALL,
+	INDEX,
+	LVALUE, //temporal fix for lvalues in funcs
 	ERROR,
 	EMPTY
 };
@@ -77,6 +81,7 @@ enum StmtType {
 	EXPR_STMT,
 	PRINT_STMT,
 	VAR_STMT,
+	ARRAY_STMT,
 	FUNCTION_STMT,
 	GROUP_STMT,
 	IF_STMT,
@@ -103,7 +108,7 @@ struct Stmt {
 	Stmt* stmts[2];
 
 	//Var stmt info
-	Token* lvalue;
+	Expr* lvalue;
 	//Group stmt info
 	std::vector<Stmt*> group;
 

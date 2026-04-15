@@ -14,6 +14,8 @@ inline bool is_end_of_stmt() {
 	   	    tokens[currentToken].type == _EOF);
 }
 
+Expr* add_empty_expr(); 
+
 int parse_all() {
 
 	if(exprs == nullptr) {
@@ -241,14 +243,19 @@ Stmt* parse_statement(bool allowDecls) {
 	}
 	else if (tokens[currentToken].type == VAR) {
 		++currentToken;
+
 		if(tokens[currentToken].type != IDENTIFIER)
 		{
 			printf("expected identifier after var\n");
 			synchronize_parser();	
 			return thisStmt;
 		}
-		thisStmt->lvalue = &tokens[currentToken];	
+
+		thisStmt->lvalue = add_empty_expr();
+		thisStmt->lvalue->type = LVALUE;
+		thisStmt->lvalue->token = &tokens[currentToken];
 		++currentToken;
+
 		if(tokens[currentToken].type != EQUAL)
 		{
 			printf("expected = after var [identifier]\n");
@@ -271,6 +278,51 @@ Stmt* parse_statement(bool allowDecls) {
 		}
 		else {
 			printf("WE ARE FUCKED!\n");
+			return thisStmt;
+		}	
+	}
+	else if (tokens[currentToken].type == LEFT_BRACKET) {
+		//ARRAY DECLARATION:
+		//[expr] identifier;
+		++currentToken;
+
+		Expr* sizeExpr = parse_expression(-999);
+		if(sizeExpr->type == EMPTY || sizeExpr->type == ERROR) {
+			//sync?
+			printf("we are fucked in parsing an array decl (size expression)\n");
+			return thisStmt;
+		}
+
+		if(tokens[currentToken].type != RIGHT_BRACKET) {
+			synchronize_parser();
+			printf("ARRAY_STMT: expected ']' after size expression in array declaration\n");
+			return thisStmt;
+		}
+
+		++currentToken;
+
+		if(tokens[currentToken].type != IDENTIFIER)
+		{
+			printf("ARRAY_STMT: expected identifier after [size]\n");
+			synchronize_parser();	
+			return thisStmt;
+		}
+
+		thisStmt->lvalue = add_empty_expr();
+		thisStmt->lvalue->type = LVALUE;
+		thisStmt->lvalue->token = &tokens[currentToken];	
+		++currentToken;
+
+		if(tokens[currentToken].type == _EOF || 
+		   tokens[currentToken].type == SEMICOLON) {
+			++currentToken;
+			thisStmt->type = ARRAY_STMT;
+			thisStmt->exprs[0] = sizeExpr;
+			return thisStmt;
+		}
+		else {
+			synchronize_parser();
+			printf("WE ARE FUCKED in array declaration!\n");
 			return thisStmt;
 		}	
 	}
@@ -355,7 +407,9 @@ Stmt* parse_statement(bool allowDecls) {
 				thisStmt->extraIndex = -1;
 			}
 			thisStmt->type = FUNCTION_STMT;
-			thisStmt->lvalue = functionNameToken;
+			thisStmt->lvalue = add_empty_expr();
+			thisStmt->lvalue->type = LVALUE;
+			thisStmt->lvalue->token = functionNameToken;
 			thisStmt->stmts[0] = funcBody;
 			return thisStmt;
 		}
@@ -395,6 +449,39 @@ Expr* add_empty_expr() {
 	++exprsCount;
 	return exprs+exprsCount-1;
 }
+
+
+Expr* try_parse_index() {
+	Expr* indexExpr = 0;
+	if(tokens[currentToken].type != LEFT_BRACKET) {
+		//we are not indexing
+		return 0;
+	}
+
+	indexExpr =  add_empty_expr();
+	++currentToken;
+
+	Expr* arg = parse_expression(-999);
+	if(arg->type == ERROR || arg->type == EMPTY) {
+		indexExpr->type = ERROR;
+		printf("Error occured in indexer expression\n");
+		return indexExpr;	
+	}
+
+	if(tokens[currentToken].type != RIGHT_BRACKET) {
+		indexExpr->type = ERROR;
+		printf("Expected ] in indexing expression\n");
+		return indexExpr;
+	}
+
+	++currentToken;
+
+	indexExpr->type = INDEX;
+	indexExpr->children[1] = arg;
+
+	return indexExpr;
+}
+
 
 Expr* try_parse_function_call() {
 	Expr* callExpr = 0;
@@ -479,7 +566,22 @@ Expr* parse_expression(float power)
 			}		
 			callExpr = try_parse_function_call();
 		}
-		// after we parsed identifier ("()")* are on the next token
+		Expr* indexExpr = try_parse_index();
+		while(indexExpr != 0)
+		{
+			if(indexExpr->type == INDEX) {
+				Expr* tmp = lhs;	
+				lhs = indexExpr;
+				lhs->children[0] = tmp;
+			}
+			else {
+				doPanic = true;
+				synchronize_parser();
+				return indexExpr;
+			}		
+			indexExpr = try_parse_function_call();
+		}
+		// after we parsed identifier ("(..)")*("[..]")* are on the next token
 		// but we will do ++currentToken after if else chain
 		// so we need to:
 		--currentToken;
