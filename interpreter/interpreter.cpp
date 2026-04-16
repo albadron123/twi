@@ -18,7 +18,7 @@ int SP = 0;
 int BP = 0;
 
 char* heap;
-int heapSize = 1024*1024*1024;
+const int HEAP_SIZE = 1024*1024*1024;
 int heapPtr = 0;
 
 
@@ -34,7 +34,7 @@ inline int get_heap(int pos) {
 	return *(double*)(heap+pos);
 }
 
-inline int set_heap(int pos, double value) {
+inline void set_heap(int pos, double value) {
 	*(double*)(heap+pos) = value;
 }
 
@@ -153,10 +153,11 @@ void run(const char* src) {
 	}
 
 	stack = (char*)malloc(2*1024*1024*sizeof(char));
-
+	heap = (char*)malloc(HEAP_SIZE*sizeof(char));
 	IP = 0;
 	SP = 0;
 	BP = 0;
+	heapPtr = 0;
 
 	while(((char*)codeSection)[IP] != OP_HLT) {
 		char op = ((char*)codeSection)[IP];
@@ -352,7 +353,7 @@ void run(const char* src) {
 			case OP_ALLOC:
 			{
 				double size = pop_stack_8();
-				double address = alloc_heap((int)size);	
+				double address = alloc_memory_heap((int)size);	
 				push_stack_8(address);
 				break;
 			}
@@ -369,6 +370,10 @@ void run(const char* src) {
 
 			case OP_ASSIGN_HEAP:
 			{
+				double value = pop_stack_8();
+				double index = pop_stack_8();
+				double base = pop_stack_8();
+				set_heap((int) base + ((int)index)*8, value);
 				break;
 			}
 		}	

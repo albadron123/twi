@@ -448,8 +448,14 @@ void compile_expression(Expr* expr) {
 			
 			if(expr->children[0]->type  == INDEX)
 			{
-				compile_expression(expr->children[0]);	
+				//compile the initial part a[]* [index]
+				//but we dont put the OP_INDEX code
+				compile_expression(expr->children[0]->children[0]);	
+				//compile the index of the expression
+				compile_expression(expr->children[0]->children[1]);	
+				//compile the evaluation
 				compile_expression(expr->children[1]);
+				
 				add_code_1((char)OP_ASSIGN_HEAP);
 				return;
 			}
